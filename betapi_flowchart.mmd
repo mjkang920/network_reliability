@@ -1,0 +1,12 @@
+flowchart TD
+    A[MECE scenario : Generate all possible failure scenarios] -->|Monte Carlo Sampling| B[Evaluate randomly sampled scenarios]
+    B --> C[Compare with MECE scenario]
+    C --> D[Evaluate system state using net_conn function]
+    C --> K[Beta count]
+    D -->|System Fail| E[Pi Count]
+    D -->|System Survive| F[while : number of failed components < total components]
+    F --> G[Assign failure and survival probabilities randomly]
+    G --> |No more failures| H[Break loop]
+    G --> |More components fail| I[Re-evaluate system state]
+    I --> |System fail| J[Pi count]
+    I --> |System survive| F
