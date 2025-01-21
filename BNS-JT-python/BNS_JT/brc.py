@@ -314,7 +314,7 @@ def get_state(comp, rules):
         rules_s = [rule for rule in rules['s'] if all([comp[k] >= v for k, v in rule.items()])]
         rules_f = [rule for rule in rules['f'] if all([comp[k] <= v for k, v in rule.items()])]
 
-        print(f"Conflicting rules found: {rules_s} vs. {rules_f}. The given system is not coherent.")
+        print(f"Conflicting rules found: {rules_s} vs. {rules_f}. The given system is not coherent!")
 
     return state
 
