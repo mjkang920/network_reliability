@@ -3,6 +3,7 @@ from scipy.stats import beta
 import copy
 import numpy as np
 from scipy.stats import beta
+import mpmath as mp
 
 
 
@@ -463,3 +464,56 @@ def survivalprob_xi1_brc100(brc_branches, probs, target_xi):
             target_prob1 += term
 
     return target_prob1
+
+
+
+def beta_parameters(mu, cov):
+    """
+    Computes alpha and beta parameters for a Beta distribution given mean (mu) and coefficient of variation (cov).
+    
+    Parameters:
+    - mu: Mean of the Beta distribution
+    - cov: Coefficient of variation (CoV = sigma/mu)
+    
+    Returns:
+    - alpha: Shape parameter alpha
+    - beta: Shape parameter beta
+    """
+    sigma = cov * mu  # Compute standard deviation from CoV
+    S = (mu * (1 - mu)) / (sigma ** 2) - 1  # Compute sum α + β
+
+    if S <= 0:
+        raise ValueError("Invalid input values: variance is too high for a Beta distribution.")
+
+    alpha = S * mu
+    beta = S * (1 - mu)
+
+    return alpha, beta
+
+
+
+mp.dps = 50  # Set decimal precision (default 50 digits)
+
+def beta_pdf_mpmath(x, alpha, beta):
+    """
+    Beta distribution PDF using mpmath
+    """
+    if x < 0 or x > 1:
+        return 0
+    return (mp.gamma(alpha + beta) / (mp.gamma(alpha) * mp.gamma(beta))) * (x**(alpha - 1)) * ((1 - x)**(beta - 1))
+
+
+
+def f_Y_mpmath(y, alpha1, beta1, alpha2, beta2):
+    """
+    Computes the probability density function of Y = P1 - P2 using mpmath.
+    """
+    if y < -1 or y > 1:
+        return 0  # P1 - P2 is always within [-1,1]
+    
+    def integrand(p2):
+        return beta_pdf_mpmath(y + p2, alpha1, beta1) * beta_pdf_mpmath(p2, alpha2, beta2)
+
+    # Use mpmath.quad for high-precision integration
+    result = mp.quad(integrand, [0, 1])
+    return float(result)  # Convert mpmath output to float
