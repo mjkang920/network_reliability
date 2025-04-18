@@ -206,10 +206,19 @@ def compute_total_probability(branches):
     - total_probability: Sum of probabilities from all branches.
     """
     
-    total_probability = sum(branch.p for branch in branches)
+    #total_probability = sum(branch.p for branch in branches)
     
+    # 문자열로 계산 과정 출력
+    probs = [branch.p for branch in branches]
+    total_probability = sum(probs)
+    prob_str = " + ".join([f"{p:.5f}" for p in probs])
+    print(f"[PROB SUM] {prob_str} = {total_probability:.5e}")
+
     return total_probability
 
+
+def is_xn_all_0(branch, X_n):
+    return all(branch.up.get(x, -1) == 0 for x in X_n)
 
 
 def survivalprob_xi0_brc100(brc_branches, probs, target_xi):
@@ -250,8 +259,7 @@ def sys_fun_rs(sample):
     return val, sys_st
 
 
-
-def run_mcs_for_unknown_branch(brs_u, unknown_branch, probs, sys_fun_rs, cov_t, sys_st_monitor, survival_prob, rand_seed=None):
+def run_mcs_for_unknown_branch(brs_u, unknown_branch, probs, sys_fun_rs, cov_t, sys_st_monitor, failure_prob, rand_seed=None):
     """
     Perform Monte Carlo simulation (MCS) for the unknown branch.
     Bayesian inference is used to estimate P(X_i=0, S=1).
@@ -272,7 +280,10 @@ def run_mcs_for_unknown_branch(brs_u, unknown_branch, probs, sys_fun_rs, cov_t, 
     # Extract branch probabilities
     brs_u_probs = [b.p for b in unknown_branch]
     brs_u_prob = round(sum(brs_u_probs), 20)  # Total probability of unknown branches
-    
+
+    print(brs_u_probs)
+    print(brs_u_prob)
+
     # Initialize variables for MCS
     samples = []
     samples_sys = np.empty((0, 1), dtype=int)
@@ -310,7 +321,7 @@ def run_mcs_for_unknown_branch(brs_u, unknown_branch, probs, sys_fun_rs, cov_t, 
         # Run system function
         val, sys_st = sys_fun_rs(sample1)
 
-        if sys_st == 's':  # Survival case
+        if sys_st == 'f':  # Failure case
             sys_st = 1
         else:
             sys_st = 0
@@ -331,23 +342,23 @@ def run_mcs_for_unknown_branch(brs_u, unknown_branch, probs, sys_fun_rs, cov_t, 
             var_s = a * b / (a + b) ** 2 / (a + b + 1)
             std_s = np.sqrt(var_s)
 
-            ps = survival_prob + brs_u_prob * p_s
+            pf = failure_prob + brs_u_prob * p_s
             std = brs_u_prob * std_s
-            cov = std / ps
+            cov = std / pf
             
             # Compute confidence interval using beta distribution
             conf_p = 0.95
             low = beta.ppf(0.5 * (1 - conf_p), a, b)
             up = beta.ppf(1 - 0.5 * (1 - conf_p), a, b)
-            cint = survival_prob + brs_u_prob * np.array([low, up])
+            cint = failure_prob + brs_u_prob * np.array([low, up])
 
         # Display progress every 1000 samples
         if nsamp % 1000 == 0:
-            print(f"nsamp: {nsamp}, P(S=1): {ps:.4e}, COV: {cov:.4e}")
+            print(f"nsamp: {nsamp}, P(S=0): {pf:.4e}, COV: {cov:.4e}")
           
     # Store results
     mcs_result = {
-        'ps': ps,
+        'pf': pf,
         'cov': cov,
         'nsamp': nsamp,
         'cint_low': cint[0],
@@ -432,6 +443,103 @@ def eventspace_x1_filter(brs_u, X_n, P_Xn_1, sys_fun):
     
     return survival_known_branch, unknown_branch
 
+
+def print_branch_info(branch, X_n, label):
+    print(f"\n[DEBUG:{label}] X_n = {X_n}")
+    print(f"  - branch.down = {branch.down}")
+    print(f"  - branch.up   = {branch.up}")
+    print(f"  - branch.p    = {branch.p:.5e}")
+
+
+def print_branch(branch, label, X_n):
+    print(f"\n[{label}] X_n = {X_n}")
+    print(f"  - down       = {branch.down}")
+    print(f"  - up         = {branch.up}")
+    print(f"  - down_state = {getattr(branch, 'down_state', 'N/A')}")
+    print(f"  - up_state   = {getattr(branch, 'up_state', 'N/A')}")
+    print(f"  - p          = {branch.p:.5e}")
+
+
+def eventspace_multi_x0_filter(brs_u, X_n, P_Xn_0, sys_fun):
+    """
+    Extended event space filtering function for a group of components being 0.
+
+    This function evaluates branches in which all components in X_n are assumed to be 0.
+    It classifies branches into confirmed failure or remaining unknown by applying the system function.
+
+    Parameters:
+    - brs_u: List of branches with unknown system state (from BRC).
+    - X_n: List of target components to be fixed to 0 (e.g., ['e1', 'e3', 'e7']).
+    - P_Xn_0: List of probabilities that each component in X_n is equal to 0.
+    - sys_fun: System function that takes component state and returns a tuple with system state 
+               (typically: ('s', 'f', 'u')) for survival, failure, unknown.
+
+    Returns:
+    - survival_known_branch: List of branches confirmed to result in system failure with X_n = 0.
+    - unknown_branch: List of branches where the system state remains unknown after evaluation.
+    """
+
+    lower0_upper0 = []           # Branches where all components in X_n are definitely 0 (lower=0, upper=0)
+    lower0_upper1 = []           # Branches where components in X_n are uncertain (lower=0, upper=1)
+    lower0_upper1_filtered = []  # Modified branches with upper fixed to 0 and updated probabilities
+
+    for branch in brs_u:
+        # Check if all components in X_n have lower bound = 0
+        lowers_are_0 = all(branch.down.get(x) == 0 for x in X_n)
+        # Check if at least one component in X_n has upper bound = 1 (i.e., uncertain state)
+        uppers_include_1 = any(branch.up.get(x) == 1 for x in X_n)
+
+        if lowers_are_0 and not uppers_include_1:
+            lower0_upper0.append(branch) # Case 1: All components are definitively 0 → no uncertainty
+            #print_branch_info(branch, X_n, "lower0_upper0")
+
+        elif lowers_are_0 and uppers_include_1:
+            lower0_upper1.append(branch) # Case 2: Components have uncertainty → filter by fixing X_n = 0
+            #print_branch_info(branch, X_n, "lower0_upper1 (before filtering)")
+
+            new_branch = copy.deepcopy(branch)
+            for i, x in enumerate(X_n):
+                new_branch.up[x] = 0           # Fix upper state to 0
+                new_branch.p *= P_Xn_0[i]      # Multiply in the probability that X_i = 0
+            lower0_upper1_filtered.append(new_branch)
+            #print_branch_info(new_branch, X_n, "lower0_upper1_filtered (after update)")
+
+    # Step 2: Evaluate modified branches with the system function
+    lower0_upper1_filtered_aftersystemfcn = []
+    failure_known_branch = []  
+    unknown_branch = lower0_upper0.copy()  # Start unknown list with fully fixed branches (which remain unknown)
+
+    for branch in lower0_upper1_filtered:
+        comps_st_lower = branch.down
+        comps_st_upper = branch.up
+
+        # Evaluate system function on both lower and upper bound states
+        _, sys_st_lower, _ = sys_fun(comps_st_lower)
+        _, sys_st_upper, _ = sys_fun(comps_st_upper)
+
+        # Save system states in the branch
+        new_branch = copy.deepcopy(branch)
+        new_branch.down_state = sys_st_lower
+        new_branch.up_state = sys_st_upper
+
+        # If states are contradictory (e.g., lower = failure, upper = survival) → treat as unknown
+        if sys_st_upper == 's' and sys_st_lower == 'f':
+            new_branch.down_state = 'u'
+            new_branch.up_state = 'u'
+        lower0_upper1_filtered_aftersystemfcn.append(new_branch)
+
+        # If both bounds show system failure → confirmed failure branch
+        if sys_st_upper == 'f' and sys_st_lower == 'f':
+            failure_known_branch.append(new_branch)
+            #print_branch(new_branch, "ADD: Confirmed failure", X_n)
+
+        # If both states are unknown or were set to 'u' due to contradiction → keep as unknown
+        if (sys_st_upper == 'u' and sys_st_lower == 'u') or \
+           (new_branch.down_state == 'u' and new_branch.up_state == 'u'):
+            unknown_branch.append(new_branch)
+            #print_branch(new_branch, "ADD: Unknown", X_n)
+ 
+    return failure_known_branch, unknown_branch
 
 
 def survivalprob_xi1_brc100(brc_branches, probs, target_xi):
