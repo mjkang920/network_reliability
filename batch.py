@@ -95,7 +95,7 @@ def mcs_unknown(brs_u, probs, sys_fun_rs, cpms, sys_name, cov_t, sys_st_monitor,
             up = beta.ppf(1 - 0.5*(1-conf_p), a, b)
             cint = sys_st_prob + brs_u_prob * np.array([low, up])
 
-        if nsamp % 1000 == 0:
+        if nsamp % 10 == 0:
             print(f'nsamp: {nsamp}, pf: {pf:.4e}, cov: {cov:.4e}')
 
 
