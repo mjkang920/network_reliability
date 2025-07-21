@@ -1,0 +1,16 @@
+\ Model multi_train_rerouting_with_conflict_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+\ Signature: 0x1b1d9e1c47ea5c83
+Minimize
+ 
+Subject To
+ R0: x_T1_n1^0_n4^2 + x_T1_n1^0_n5^2 = 1
+ R39: x_T2_n1^0_n4^2 + x_T2_n1^0_n5^2 = 1
+ R78: x_T3_n1^0_n4^2 + x_T3_n1^0_n5^2 = 1
+ R117: x_T1_n1^0_n4^2 + x_T2_n1^0_n4^2 + x_T3_n1^0_n4^2 <= 1
+ R118: x_T1_n1^0_n5^2 + x_T2_n1^0_n5^2 + x_T3_n1^0_n5^2 <= 1
+Bounds
+Binaries
+ x_T1_n1^0_n4^2 x_T1_n1^0_n5^2 x_T2_n1^0_n4^2 x_T2_n1^0_n5^2 x_T3_n1^0_n4^2
+ x_T3_n1^0_n5^2
+End
